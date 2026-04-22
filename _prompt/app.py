@@ -6,6 +6,7 @@ from pathlib import Path
 from openai import OpenAI
 
 CONFIG_FILE = Path.home() / ".audio_transcriber_config.json"
+IS_CLOUD = Path.home() == Path("/home/appuser")  # Streamlit Cloud home dir
 
 TEMPLATES = {
     "Časová razítka [MM:SS]": "timestamps",
@@ -23,12 +24,9 @@ LANGUAGES = {
     "Automaticky": None,
 }
 
-IS_CLOUD = os.environ.get("STREAMLIT_SHARING_MODE") == "streamlit-sharing" \
-    or os.environ.get("IS_STREAMLIT_CLOUD") == "true" \
-    or not Path.home().joinpath(".").is_dir() is False
-
-
 def load_saved_key() -> str:
+    if IS_CLOUD:
+        return ""  # never load from file on shared cloud container
     try:
         if CONFIG_FILE.exists():
             data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -39,6 +37,8 @@ def load_saved_key() -> str:
 
 
 def save_key(key: str) -> bool:
+    if IS_CLOUD:
+        return False  # session_state only on cloud
     try:
         CONFIG_FILE.write_text(
             json.dumps({"api_key": key}, indent=2, ensure_ascii=False),
@@ -141,7 +141,10 @@ with st.sidebar:
             st.error("Klíč musí začínat 'sk-'")
 
     st.divider()
-    st.caption("Klíč nikdy neopouští tuto aplikaci — odesílá se pouze na OpenAI API.")
+    if IS_CLOUD:
+        st.caption("🔒 Online verze: klíč platí jen pro tuto relaci — po zavření záložky zmizí.")
+    else:
+        st.caption("🔒 Klíč uložen lokálně. Odesílá se pouze na OpenAI API.")
 
 col1, col2 = st.columns([2, 1])
 
