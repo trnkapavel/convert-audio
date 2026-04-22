@@ -13,7 +13,9 @@ Upload a file, pick a template, download the result.
 
 ### ▶ Try it online (no install needed)
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=trnkapavel/convert-audio&branch=main&mainModule=_prompt/app.py)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://convert-audio.streamlit.app)
+
+**[https://convert-audio.streamlit.app](https://convert-audio.streamlit.app)**
 
 > You only need an OpenAI API key — see [how to get one](#get-an-openai-api-key).
 
@@ -104,7 +106,9 @@ Nahraješ soubor, vyběreš šablonu, stáhneš textový soubor.
 
 ### ▶ Vyzkoušet online (bez instalace)
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=trnkapavel/convert-audio&branch=main&mainModule=_prompt/app.py)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://convert-audio.streamlit.app)
+
+**[https://convert-audio.streamlit.app](https://convert-audio.streamlit.app)**
 
 > Potřebuješ pouze OpenAI API klíč — viz [jak ho získat](#získej-openai-api-klíč).
 
