@@ -23,18 +23,30 @@ LANGUAGES = {
     "Automaticky": None,
 }
 
-
-def load_config() -> dict:
-    if CONFIG_FILE.exists():
-        try:
-            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
+IS_CLOUD = os.environ.get("STREAMLIT_SHARING_MODE") == "streamlit-sharing" \
+    or os.environ.get("IS_STREAMLIT_CLOUD") == "true" \
+    or not Path.home().joinpath(".").is_dir() is False
 
 
-def save_config(config: dict) -> None:
-    CONFIG_FILE.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+def load_saved_key() -> str:
+    try:
+        if CONFIG_FILE.exists():
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            return data.get("api_key", "")
+    except Exception:
+        pass
+    return ""
+
+
+def save_key(key: str) -> bool:
+    try:
+        CONFIG_FILE.write_text(
+            json.dumps({"api_key": key}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
 
 
 def transcribe(api_key: str, audio_bytes: bytes, filename: str, language: str | None):
@@ -48,10 +60,9 @@ def transcribe(api_key: str, audio_bytes: bytes, filename: str, language: str | 
             kwargs = dict(model="whisper-1", file=f, response_format="verbose_json")
             if language:
                 kwargs["language"] = language
-            result = client.audio.transcriptions.create(**kwargs)
+            return client.audio.transcriptions.create(**kwargs)
     finally:
         os.unlink(tmp_path)
-    return result
 
 
 def fmt_time(seconds: float) -> str:
@@ -99,31 +110,38 @@ def format_output(result, template: str, stem: str) -> tuple[str, str]:
     return "", f"{stem}.txt"
 
 
-# ── UI ──────────────────────────────────────────────────────────────────────
+# ── session state init ───────────────────────────────────────────────────────
+
+if "api_key" not in st.session_state:
+    st.session_state.api_key = load_saved_key()
+
+# ── UI ───────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="Audio Přepis", page_icon="🎤", layout="wide")
 st.title("🎤 Audio Přepis")
 
-config = load_config()
-
 with st.sidebar:
     st.header("Nastavení API")
-    api_key = st.text_input(
+    key_input = st.text_input(
         "OpenAI API klíč",
-        value=config.get("api_key", ""),
+        value=st.session_state.api_key,
         type="password",
         placeholder="sk-...",
     )
+
     if st.button("💾 Uložit API klíč"):
-        if api_key.startswith("sk-"):
-            config["api_key"] = api_key
-            save_config(config)
-            st.success("Klíč uložen.")
+        if key_input.startswith("sk-"):
+            st.session_state.api_key = key_input
+            saved = save_key(key_input)
+            if saved:
+                st.success("Klíč uložen lokálně.")
+            else:
+                st.success("Klíč uložen pro tuto relaci.")
         else:
             st.error("Klíč musí začínat 'sk-'")
 
     st.divider()
-    st.caption(f"Klíč uložen v: `{CONFIG_FILE}`")
+    st.caption("Klíč nikdy neopouští tuto aplikaci — odesílá se pouze na OpenAI API.")
 
 col1, col2 = st.columns([2, 1])
 
@@ -131,7 +149,7 @@ with col1:
     uploaded = st.file_uploader(
         "Nahrát audio soubor",
         type=["m4a", "mp3", "wav", "ogg", "flac", "webm", "mp4"],
-        help="Maximální velikost závisí na limitu OpenAI Whisper API (25 MB).",
+        help="Limit OpenAI Whisper API: 25 MB.",
     )
 
 with col2:
@@ -141,23 +159,16 @@ with col2:
 if uploaded:
     st.info(f"Soubor: **{uploaded.name}** ({uploaded.size / 1024:.1f} KB)")
 
-    if st.button("▶ Přepsat", type="primary", disabled=not uploaded):
-        key = config.get("api_key", "") or api_key
+    if st.button("▶ Přepsat", type="primary"):
+        key = st.session_state.api_key
         if not key:
             st.error("Zadejte a uložte API klíč v postranním panelu.")
         else:
             with st.spinner("Přepisuji… může trvat chvíli."):
                 try:
-                    result = transcribe(
-                        key,
-                        uploaded.read(),
-                        uploaded.name,
-                        LANGUAGES[lang_label],
-                    )
+                    result = transcribe(key, uploaded.read(), uploaded.name, LANGUAGES[lang_label])
                     stem = Path(uploaded.name).stem
-                    output_text, output_filename = format_output(
-                        result, TEMPLATES[template_label], stem
-                    )
+                    output_text, output_filename = format_output(result, TEMPLATES[template_label], stem)
 
                     st.success("Přepis dokončen.")
                     st.text_area("Výsledek", output_text, height=450)
