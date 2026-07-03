@@ -1,9 +1,12 @@
 import os
 import json
+import subprocess
 import tempfile
 import streamlit as st
 from pathlib import Path
 from openai import OpenAI
+
+WHISPER_LIMIT_BYTES = 25 * 1024 * 1024  # 26,214,400 B
 
 CONFIG_FILE = Path.home() / ".audio_transcriber_config.json"
 IS_CLOUD = Path.home() == Path("/home/appuser")  # Streamlit Cloud home dir
@@ -49,20 +52,50 @@ def save_key(key: str) -> bool:
         return False
 
 
+def get_duration_seconds(path: str) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", path],
+        capture_output=True, text=True, check=True,
+    )
+    return float(out.stdout.strip())
+
+
+def compress_audio(src_path: str) -> str:
+    """Převede audio na mono MP3 s bitrate voleným tak, aby se vešel pod limit Whisper API."""
+    duration = get_duration_seconds(src_path)
+    target_bits = WHISPER_LIMIT_BYTES * 8 * 0.9  # 10% rezerva
+    bitrate_kbps = max(16, min(64, int(target_bits / duration / 1000)))
+    dst_path = src_path + f"_compressed_{bitrate_kbps}k.mp3"
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", src_path, "-ac", "1", "-b:a", f"{bitrate_kbps}k", dst_path],
+        capture_output=True, check=True,
+    )
+    return dst_path
+
+
 def transcribe(api_key: str, audio_bytes: bytes, filename: str, language: str | None):
     client = OpenAI(api_key=api_key)
     suffix = Path(filename).suffix or ".m4a"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(audio_bytes)
         tmp_path = tmp.name
+
+    compressed_path = None
     try:
-        with open(tmp_path, "rb") as f:
+        upload_path = tmp_path
+        if os.path.getsize(tmp_path) > WHISPER_LIMIT_BYTES:
+            compressed_path = compress_audio(tmp_path)
+            upload_path = compressed_path
+        with open(upload_path, "rb") as f:
             kwargs = dict(model="whisper-1", file=f, response_format="verbose_json")
             if language:
                 kwargs["language"] = language
             return client.audio.transcriptions.create(**kwargs)
     finally:
         os.unlink(tmp_path)
+        if compressed_path and os.path.exists(compressed_path):
+            os.unlink(compressed_path)
 
 
 def fmt_time(seconds: float) -> str:
@@ -152,7 +185,7 @@ with col1:
     uploaded = st.file_uploader(
         "Nahrát audio soubor",
         type=["m4a", "mp3", "wav", "ogg", "flac", "webm", "mp4"],
-        help="Limit OpenAI Whisper API: 25 MB.",
+        help="Limit OpenAI Whisper API: 25 MB. Větší soubory se automaticky zkomprimují.",
     )
 
 with col2:
